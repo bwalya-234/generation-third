@@ -198,7 +198,7 @@ footer a{color:var(--orange);white-space:nowrap}
         </select></label></div>
         <p id="price-status" class="caption" role="status"></p>
         <label hidden>Load prices.csv for this offline preview<input id="local-prices" type="file" accept=".csv,text/csv"></label>
-        <label>Priced item <span>(optional)</span><select id="priced-item" name="item" disabled><option value="">Choose an item or request a custom quote</option></select></label>
+        <label>Item or service <span>(optional)</span><select id="priced-item" name="item" disabled><option value="">Choose an item or service</option></select></label>
         <div class="form-row"><label>Quantity <span>(if applicable)</span><input id="quote-quantity" name="quantity" type="number" min="1" max="999999" step="1"></label><label>Needed by <span>(optional)</span><input name="deadline" type="date"></label></div>
         <div class="estimate" id="estimate-box" hidden><span id="unit-price"></span><output id="estimate-total" for="priced-item quote-quantity" aria-live="polite"></output></div>
         <label id="location-field" hidden>Site location<input name="location" maxlength="160"></label>
@@ -245,7 +245,115 @@ const catalogItems = [
   { id: 'lamination', name: 'A4 lamination', unit: 'sheet', service: 'Printing & digital services' },
   { id: 'binding', name: 'Spiral binding', unit: 'document', service: 'Printing & digital services' },
 ];
-let priceList = [];
+const quoteOptions = {
+  "Stationery & office supplies": [
+    "Exercise books",
+    "Calculators",
+    "A4, A3 and A5 paper",
+    "Files and folders",
+    "Envelopes",
+    "Registers",
+    "Receipt and invoice books",
+    "Printer ink and toner",
+    "Photo paper",
+    "Thermal rolls",
+    "Binding supplies",
+    "Laminating pouches",
+    "Storage and office equipment"
+  ],
+  "Printing & digital services": [
+    "Bulk copying",
+    "Booklets",
+    "Comb binding",
+    "Certificates",
+    "Business cards",
+    "Posters and flyers",
+    "Company profiles",
+    "Typing and CVs",
+    "Scanning",
+    "PDF editing",
+    "Internet services",
+    "Graphic design",
+    "Packaging and labels"
+  ],
+  "Government & business support": [
+    "PACRA business registration",
+    "PACRA annual returns",
+    "ZRA TPIN registration",
+    "ZRA Smart Invoice support",
+    "ZRA tax compliance applications",
+    "NAPSA registration",
+    "NAPSA returns support",
+    "NHIMA registration",
+    "NHIMA returns support",
+    "ZPPA tender support",
+    "RTSA renewals",
+    "CDF forms and applications",
+    "Job applications",
+    "School and scholarship applications"
+  ],
+  "Apparel, gifts & merchandise": [
+    "Branded T-shirts",
+    "Polo shirts",
+    "Uniforms and workwear",
+    "Hoodies",
+    "Reflective apparel",
+    "Caps",
+    "Mugs and bottles",
+    "Key holders",
+    "Branded pens and notebooks",
+    "Bags and corporate gifts",
+    "DTF printing",
+    "Sublimation",
+    "Heat transfer",
+    "Embroidery"
+  ],
+  "Signage, displays & ID cards": [
+    "PVC and roll-up banners",
+    "Posters and backdrops",
+    "Billboards",
+    "Shop signage",
+    "Vinyl stickers",
+    "Vehicle branding",
+    "Window and wall graphics",
+    "Staff and student ID cards",
+    "Badges and lanyards",
+    "Double-sided PVC cards"
+  ],
+  "Building & civil works": [
+    "General building",
+    "Roadworks and grading",
+    "Drainage and culverts",
+    "Earthworks and foundations",
+    "Masonry",
+    "Roofing and ceilings",
+    "Plumbing",
+    "Electrical installations",
+    "Painting",
+    "Carpentry and joinery"
+  ],
+  "Materials & specialist works": [
+    "Cement and aggregates",
+    "Blocks",
+    "Roofing materials",
+    "Timber and steel",
+    "Hardware and fittings",
+    "Tiling",
+    "Steel fabrication",
+    "Fencing",
+    "Water and sanitation",
+    "Boreholes",
+    "Landscaping",
+    "Refurbishment",
+    "Prefabricated structures",
+    "Estimating and site support"
+  ],
+  "Branded T-shirts": [
+    "Custom T-shirt branding"
+  ]
+};
+let pricesById = new Map();
+let availableItems = [];
 const pricedItem = document.querySelector('#priced-item');
 const quantity = document.querySelector('#quote-quantity');
 const estimateBox = document.querySelector('#estimate-box');
@@ -256,27 +364,36 @@ function formatPrice(cents) {
 }
 
 function selectedItem() {
-  return priceList.find(item => item.id === pricedItem.value);
+  return availableItems.find(item => item.id === pricedItem.value);
 }
 
 function updateEstimate() {
   const item = selectedItem();
-  estimateBox.hidden = !item;
-  quantity.required = Boolean(item);
+  const hasPrice = item?.cents !== undefined;
+  estimateBox.hidden = !hasPrice;
+  quantity.required = hasPrice;
   form.elements.notes.required = !item;
-  if (!item) return;
+  if (!hasPrice) return;
   document.querySelector('#unit-price').textContent = 'Unit price: ' + formatPrice(item.cents) + ' per ' + item.unit;
   document.querySelector('#estimate-total').textContent = quantity.value && quantity.validity.valid
     ? 'Estimated total: ' + formatPrice(item.cents * Number(quantity.value))
     : 'Enter a whole quantity from 1 to 999,999.';
 }
 
-function selectPricedItem(item) {
-  pricedItem.value = item.id;
-  service.value = item.service;
-  detachDesign();
-  updateQuoteFields();
-  if (!quantity.value) quantity.value = '1';
+function updateItemOptions() {
+  const selected = pricedItem.value;
+  const pricedItems = catalogItems
+    .filter(item => item.service === service.value)
+    .map(item => pricesById.get(item.id) ?? item);
+  const serviceItems = (quoteOptions[service.value] ?? []).map(name => ({ id: name, name }));
+  availableItems = [...pricedItems, ...serviceItems];
+
+  pricedItem.options.length = 1;
+  for (const item of availableItems) {
+    pricedItem.add(new Option(item.name, item.id));
+  }
+  pricedItem.value = availableItems.some(item => item.id === selected) ? selected : '';
+  pricedItem.disabled = availableItems.length === 0;
   updateEstimate();
 }
 
@@ -301,16 +418,9 @@ function readPrices(csv) {
 }
 
 function showPrices(csv) {
-  priceList = readPrices(csv);
-  const selected = pricedItem.value;
-  pricedItem.options.length = 1;
-  for (const item of priceList) {
-    pricedItem.add(new Option(item.name, item.id));
-  }
-  pricedItem.value = selected;
-  pricedItem.disabled = false;
+  pricesById = new Map(readPrices(csv).map(item => [item.id, item]));
+  updateItemOptions();
   document.querySelector('#price-status').textContent = '';
-  updateEstimate();
 }
 
 async function loadPrices() {
@@ -340,17 +450,26 @@ async function loadPrices() {
 }
 
 pricedItem.addEventListener('change', () => {
-  const item = selectedItem();
-  if (item) selectPricedItem(item);
-  else updateEstimate();
+  if (selectedItem()?.cents !== undefined && !quantity.value) quantity.value = '1';
+  updateEstimate();
 });
 quantity.addEventListener('input', updateEstimate);
 
+function searchWords(value) {
+  return value.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+}
+
 function updateCatalog() {
-  const words = search.value.trim().toLowerCase().split(/\s+/);
+  const words = searchWords(search.value);
   let count = 0;
   products.forEach(product => {
-    const content = product.textContent.toLowerCase();
+    const category = product.querySelector('[data-service]').dataset.service;
+    const pricedNames = catalogItems.filter(item => item.service === category).map(item => item.name);
+    const content = searchWords([
+      product.textContent,
+      ...pricedNames,
+      ...(quoteOptions[category] ?? [])
+    ].join(' ')).join(' ');
     const matchesDivision = activeFilter === 'all' || activeFilter === product.dataset.category;
     product.hidden = !matchesDivision || !words.every(word => content.includes(word));
     if (!product.hidden) count++;
@@ -365,7 +484,11 @@ filterButtons.forEach(button => button.addEventListener('click', () => {
   activeFilter = button.dataset.filter;
   updateCatalog();
 }));
-search.addEventListener('input', updateCatalog);
+search.addEventListener('input', () => {
+  activeFilter = 'all';
+  selectButton(filterButtons, filterButtons.find(button => button.dataset.filter === activeFilter));
+  updateCatalog();
+});
 
 function updateQuoteFields() {
   const construction = ['Building & civil works', 'Materials & specialist works'];
@@ -491,15 +614,15 @@ function detachDesign() {
 document.querySelector('#detach-design').addEventListener('click', detachDesign);
 service.addEventListener('change', () => {
   if (service.value !== 'Branded T-shirts') detachDesign();
-  if (selectedItem()?.service !== service.value) pricedItem.value = '';
-  updateEstimate();
+  pricedItem.value = '';
+  updateItemOptions();
   updateQuoteFields();
 });
 
 document.querySelectorAll('[data-service]').forEach(link => link.addEventListener('click', () => {
   service.value = link.dataset.service;
   pricedItem.value = '';
-  updateEstimate();
+  updateItemOptions();
   detachDesign();
   updateQuoteFields();
 }));
@@ -512,7 +635,7 @@ document.querySelector('#use-design').addEventListener('click', event => {
   }
   service.value = 'Branded T-shirts';
   pricedItem.value = '';
-  updateEstimate();
+  updateItemOptions();
   updateQuoteFields();
   const text = artText.value.trim();
   quoteDesign = [
@@ -549,8 +672,8 @@ updateQuoteFields();
 updateCatalog();
 document.querySelector('.filters').hidden = false;
 document.querySelector('.studio-controls').hidden = false;
+updateItemOptions();
 loadPrices();
-updateEstimate();
 form.hidden = false;
 </script>
 </body>
